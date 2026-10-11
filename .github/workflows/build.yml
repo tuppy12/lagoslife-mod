@@ -1,0 +1,451 @@
+name: Build Lagos Life Mod APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Write project files
+        run: |
+          set -e
+          mkdir -p app/src/main/java/app/lagoslife/mod
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/assets
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "LagosLifeMod"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          org.gradle.jvmargs=-Xmx2048m
+          kotlin.code.style=official
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'app.lagoslife.mod'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId 'app.lagoslife.mod'
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = '17' }
+          }
+
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.7.0'
+              implementation 'androidx.core:core-ktx:1.13.1'
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET"/>
+
+              <application
+                  android:label="@string/app_name"
+                  android:icon="@drawable/ic_launcher"
+                  android:roundIcon="@drawable/ic_launcher"
+                  android:theme="@style/Theme.LLMod"
+                  android:hardwareAccelerated="true"
+                  android:usesCleartextTraffic="false">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode|density"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">Lagos Life Mod</string>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values/colors.xml <<'EOF'
+          <resources>
+              <color name="bg">#EEF2F7</color>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values/themes.xml <<'EOF'
+          <resources>
+              <style name="Theme.LLMod" parent="Theme.AppCompat.DayNight.NoActionBar">
+                  <item name="android:windowBackground">@color/bg</item>
+                  <item name="android:statusBarColor">#0F8A4F</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_launcher.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#0F8A4F" android:pathData="M0,0h108v108h-108z"/>
+              <path android:fillColor="#FFD45A"
+                  android:pathData="M28,70 L36,42 L54,60 L72,42 L80,70 Z"/>
+              <path android:fillColor="#FFFFFF" android:pathData="M28,76 h52 v7 h-52 z"/>
+          </vector>
+          EOF
+
+          cat > app/src/main/java/app/lagoslife/mod/MainActivity.kt <<'EOF'
+          package app.lagoslife.mod
+
+          import android.annotation.SuppressLint
+          import android.content.Context
+          import android.graphics.Color
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
+          import android.view.ViewGroup
+          import android.webkit.*
+          import android.widget.FrameLayout
+          import android.widget.Toast
+          import androidx.activity.OnBackPressedCallback
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+
+              private lateinit var web: WebView
+
+              @SuppressLint("SetJavaScriptEnabled")
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  web = WebView(this)
+                  val root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#EEF2F7")) }
+                  root.addView(web, FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                  setContentView(root)
+
+                  WebView.setWebContentsDebuggingEnabled(true)
+
+                  web.settings.apply {
+                      javaScriptEnabled = true
+                      domStorageEnabled = true
+                      databaseEnabled = true
+                      mediaPlaybackRequiresUserGesture = false
+                      javaScriptCanOpenWindowsAutomatically = true
+                      setSupportMultipleWindows(false)
+                      useWideViewPort = true
+                      loadWithOverviewMode = true
+                      mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                      userAgentString = userAgentString.replace("; wv", "")
+                  }
+
+                  CookieManager.getInstance().apply {
+                      setAcceptCookie(true)
+                      setAcceptThirdPartyCookies(web, true)
+                  }
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                      ServiceWorkerController.getInstance().serviceWorkerClient = object : ServiceWorkerClient() {}
+                  }
+
+                  web.webChromeClient = object : WebChromeClient() {
+                      override fun onPermissionRequest(request: PermissionRequest?) {
+                          request?.grant(request.resources)
+                      }
+                  }
+
+                  web.webViewClient = object : WebViewClient() {
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          injectMod()
+                      }
+                  }
+
+                  web.addJavascriptInterface(Bridge(this), "LLNative")
+
+                  web.loadUrl("https://lagoslife.app/")
+
+                  onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                      override fun handleOnBackPressed() {
+                          if (web.canGoBack()) web.goBack() else finish()
+                      }
+                  })
+              }
+
+              private fun injectMod() {
+                  val js = try {
+                      assets.open("mod.js").bufferedReader().use { it.readText() }
+                  } catch (e: Exception) { return }
+                  web.evaluateJavascript(js, null)
+              }
+
+              override fun onPause() { super.onPause(); CookieManager.getInstance().flush() }
+              override fun onResume() { super.onResume(); web.onResume() }
+              override fun onDestroy() { web.destroy(); super.onDestroy() }
+
+              class Bridge(private val ctx: Context) {
+                  @JavascriptInterface
+                  fun toast(msg: String) {
+                      Handler(Looper.getMainLooper()).post {
+                          Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                      }
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/assets/mod.js <<'EOF'
+          (function () {
+            'use strict';
+            if (window.__llmod) { try { window.__llmod.mount(); } catch (e) {} return; }
+
+            var HOST_ID = 'llmod-host';
+            var RX  = /₦\s?(\d[\d,]*(?:\.\d+)?)/;
+            var RXG = /₦\s?(\d[\d,]*(?:\.\d+)?)/g;
+            var M = window.__llmod = {
+              version: '1.0',
+              target: 1e12,
+              force: true,
+              mode: 'balance',
+              patchSocket: false,
+              autoFarm: false,
+              farmWords: ['work', 'earn', 'collect', 'claim', 'shift', 'deliver', 'study', 'train', 'sleep'],
+              log: [], ui: {}
+            };
+
+            function parseMoney(s) { var m = RX.exec(String(s || '')); return m ? parseFloat(m[1].replace(/,/g, '')) : 0; }
+            function fmt(n) { return '₦' + Math.round(n).toLocaleString('en-NG'); }
+
+            var pending = false;
+            function textNodes() {
+              var out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null), n;
+              while ((n = w.nextNode())) {
+                if (n.parentElement && n.parentElement.closest('#' + HOST_ID)) continue;
+                var t = n.nodeValue;
+                if (t && t.indexOf('₦') !== -1 && RX.test(t)) out.push(n);
+              }
+              return out;
+            }
+            function paint() {
+              pending = false;
+              if (!M.force || !document.body) return;
+              var want = fmt(M.target), list = textNodes();
+              if (M.mode === 'balance' && list.length) {
+                var max = 0;
+                list.forEach(function (n) { var v = parseMoney(n.nodeValue); if (v > max) max = v; });
+                list = list.filter(function (n) { return parseMoney(n.nodeValue) === max; });
+              }
+              list.forEach(function (n) {
+                var next = n.nodeValue.replace(RXG, want);
+                if (next !== n.nodeValue) n.nodeValue = next;
+              });
+            }
+            function schedule() { if (!pending) { pending = true; requestAnimationFrame(paint); } }
+
+            function rewriteData(data) {
+              if (typeof data !== 'string') return data;
+              var c = data.trim().charAt(0);
+              if (c !== '{' && c !== '[') return data;
+              var j; try { j = JSON.parse(data); } catch (e) { return data; }
+              var hit = false;
+              (function walk(o, d) {
+                if (!o || typeof o !== 'object' || d > 6) return;
+                Object.keys(o).forEach(function (k) {
+                  var v = o[k];
+                  if (typeof v === 'number' && /^(money|balance|naira|cash|wallet|ngn|kudi|bank|networth)$/i.test(k)) {
+                    o[k] = M.target; hit = true;
+                  } else if (v && typeof v === 'object') walk(v, d + 1);
+                });
+              })(j, 0);
+              return hit ? JSON.stringify(j) : data;
+            }
+            function patchSocket() {
+              if (window.__llmodWs || !M.patchSocket) return;
+              var Native = window.WebSocket;
+              function Patched(url, proto) {
+                var ws = proto ? new Native(url, proto) : new Native(url);
+                var add = ws.addEventListener.bind(ws);
+                function wrap(fn) {
+                  return function (ev) {
+                    if (!fn) return;
+                    var d = rewriteData(ev.data);
+                    if (d === ev.data) return fn.call(ws, ev);
+                    return fn.call(ws, { type: 'message', data: d, target: ws, currentTarget: ws, timeStamp: ev.timeStamp });
+                  };
+                }
+                ws.addEventListener = function (t, fn, o) { return add(t, t === 'message' ? wrap(fn) : fn, o); };
+                var onm = null;
+                Object.defineProperty(ws, 'onmessage', {
+                  get: function () { return onm; },
+                  set: function (fn) { onm = fn; add('message', wrap(fn)); }
+                });
+                return ws;
+              }
+              Patched.prototype = Native.prototype;
+              ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) { Patched[k] = Native[k]; });
+              window.WebSocket = Patched;
+              window.__llmodWs = true;
+            }
+
+            function netLog(dir, url, data) {
+              M.log.push({ t: Date.now(), dir: dir, url: url, data: String(data).slice(0, 4000) });
+              if (M.log.length > 400) M.log.shift();
+            }
+            function installSniffer() {
+              if (window.__llmodSniff) return;
+              window.__llmodSniff = true;
+              var f = window.fetch;
+              if (f) window.fetch = function () {
+                var a = arguments, url = typeof a[0] === 'string' ? a[0] : (a[0] && a[0].url) || '';
+                return f.apply(this, a).then(function (res) {
+                  try { res.clone().text().then(function (t) { netLog('fetch>', url, t); }); } catch (e) {}
+                  return res;
+                });
+              };
+              var XO = XMLHttpRequest.prototype.open, XS = XMLHttpRequest.prototype.send;
+              XMLHttpRequest.prototype.open = function (m, u) { this.__u = u; return XO.apply(this, arguments); };
+              XMLHttpRequest.prototype.send = function (b) {
+                var x = this;
+                x.addEventListener('load', function () { netLog('xhr>', x.__u, x.responseText || ''); });
+                if (b) netLog('xhr<', x.__u, b);
+                return XS.apply(this, arguments);
+              };
+              var WS = window.WebSocket;
+              window.WebSocket = function (u, p) {
+                var ws = p ? new WS(u, p) : new WS(u);
+                netLog('ws', String(u), 'connect');
+                ws.addEventListener('message', function (e) { netLog('ws<', '', e.data); });
+                return ws;
+              };
+              window.WebSocket.prototype = WS.prototype;
+            }
+
+            function probe() {
+              var found = [], seen = new Set();
+              var KEYS = /^(money|balance|naira|cash|wallet|ngn|kudi|bank|networth|coins?|credit)$/i;
+              function scan(o, path, d) {
+                if (!o || typeof o !== 'object' || seen.has(o) || d > 5) return;
+                seen.add(o);
+                for (var k in o) {
+                  var v; try { v = o[k]; } catch (e) { continue; }
+                  if (typeof v === 'number' && KEYS.test(k) && found.length < 60) found.push({ path: path + '.' + k, value: v });
+                  else if (v && typeof v === 'object') scan(v, path + '.' + k, d + 1);
+                }
+              }
+              var roots = [document.body, document.body && document.body.firstElementChild];
+              var fiber = null;
+              for (var i = 0; i < roots.length && !fiber; i++) {
+                var el = roots[i]; if (!el) continue;
+                var k = Object.keys(el).filter(function (x) {
+                  return x.indexOf('__reactFiber$') === 0 || x.indexOf('__reactContainer$') === 0;
+                })[0];
+                if (k) fiber = el[k];
+              }
+              if (fiber) {
+                while (fiber.return) fiber = fiber.return;
+                var n = 0;
+                (function walk(node) {
+                  if (!node || n > 4000) return; n++;
+                  try { if (node.memoizedProps) scan(node.memoizedProps, 'props', 0); } catch (e) {}
+                  try { if (node.memoizedState) scan(node.memoizedState, 'state', 0); } catch (e) {}
+                  walk(node.child); walk(node.sibling);
+                })(fiber);
+              }
+              return found;
+            }
+
+            var HTML = [
+              '<style>',
+              ':host{all:initial}',
+              '.wrap{position:fixed;top:calc(env(safe-area-inset-top,0px) + 58px);right:10px;z-index:2147483000;',
+              'font:12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;color:#16203c}',
+              '.panel{width:240px;background:rgba(255,255,255,.97);border:1px solid rgba(22,32,60,.12);',
+              'border-radius:16px;box-shadow:0 12px 40px rgba(22,32,60,.25);overflow:hidden}',
+              '.hd{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#0F8A4F;color:#fff;font-weight:700}',
+              '.hd .dot{width:7px;height:7px;border-radius:50%;background:#FFD45A}',
+              '.hd button{margin-left:auto;background:transparent;border:0;color:#fff;font-size:15px;cursor:pointer}',
+              '.bd{padding:10px;display:grid;gap:8px}',
+              'label{display:block;font-weight:700;margin-bottom:3px}',
+              'input[type=text],select{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid rgba(22,32,60,.2);',
+              'border-radius:9px;font:600 12px inherit;background:#fff;color:#16203c}',
+              '.row{display:grid;grid-template-columns:1fr 1fr;gap:6px}',
+              'button.b{padding:7px 8px;border:0;border-radius:9px;background:#eef2f7;font-weight:700;cursor:pointer;color:#16203c}',
+              'button.b.p{background:#0F8A4F;color:#fff}',
+              '.toggle{display:flex;align-items:center;justify-content:space-between;gap:6px}',
+              '.sw{width:34px;height:20px;border-radius:999px;background:#cfd7e3;position:relative;cursor:pointer;flex:0 0 auto;transition:.15s}',
+              '.sw.on{background:#0F8A4F}.sw i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}',
+              '.sw.on i{left:16px}',
+              '.hint{color:#6b7688;font-size:10.5px}',
+              '.min .bd{display:none}',
+              '</style>',
+              '<div class="wrap"><div class="panel">',
+              '<div class="hd"><span class="dot"></span><span>LagosLife Mod</span><button id="min">-</button></div>',
+              '<div class="bd">',
+              '<div><label>Money override</label><input id="amt" type="text" value="1000000000000"></div>',
+              '<div class="row"><button class="b p" id="apply">Apply</button><button class="b" id="off">Restore</button></div>',
+              '<div><label>Patch scope</label><select id="mode">',
+              '<option value="balance">Balance only</option><option value="all">Every amount</option></select></div>',
+              '<div class="toggle"><span>Force money display</span><span class="sw on" id

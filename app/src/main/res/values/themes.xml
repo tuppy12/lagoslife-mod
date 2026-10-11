@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.LLMod" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">#0F8A4F</item>
+    </style>
+</resources>

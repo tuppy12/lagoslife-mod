@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#EEF2F7</color>
+    <string name="app_name">Lagos Life Mod</string>
+    <style name="Theme.LLMod" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">#0F8A4F</item>
+    </style>
+</resources>

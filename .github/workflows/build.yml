@@ -271,7 +271,6 @@ jobs:
           }
           EOF
           echo "kotlin ok"
-
           cat > app/src/main/assets/mod.js <<'EOF'
           (function () {
             'use strict';
@@ -451,4 +450,115 @@ jobs:
               'button.b.p{background:#0F8A4F;color:#fff}',
               '.toggle{display:flex;align-items:center;justify-content:space-between;gap:6px}',
               '.sw{width:34px;height:20px;border-radius:999px;background:#cfd7e3;position:relative;cursor:pointer;flex:0 0 auto;transition:.15s}',
-              '.sw.on{background:#0F8A4F}.sw i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:
+              '.sw.on{background:#0F8A4F}.sw i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}',
+              '.sw.on i{left:16px}',
+              '.hint{color:#6b7688;font-size:10.5px}',
+              '.min .bd{display:none}',
+              '</style>',
+              '<div class="wrap"><div class="panel">',
+              '<div class="hd"><span class="dot"></span><span>LagosLife Mod</span><button id="min">-</button></div>',
+              '<div class="bd">',
+              '<div><label>Money override</label><input id="amt" type="text" value="1000000000000"></div>',
+              '<div class="row"><button class="b p" id="apply">Apply</button><button class="b" id="off">Restore</button></div>',
+              '<div><label>Patch scope</label><select id="mode">',
+              '<option value="balance">Balance only</option><option value="all">Every amount</option></select></div>',
+              '<div class="toggle"><span>Force money display</span><span class="sw on" id="swForce"><i></i></span></div>',
+              '<div class="toggle"><span>Patch socket (exp.)</span><span class="sw" id="swSock"><i></i></span></div>',
+              '<div class="toggle"><span>Auto-click actions</span><span class="sw" id="swFarm"><i></i></span></div>',
+              '<div class="row"><button class="b" id="probe">Probe store</button><button class="b" id="dump">Copy log</button></div>',
+              '<div class="hint">Ctrl+Shift+M toggles this panel.</div>',
+              '</div></div></div>'
+            ].join('');
+
+            function mount() {
+              if (document.getElementById(HOST_ID)) return;
+              if (!document.body) { setTimeout(mount, 300); return; }
+              var host = document.createElement('div');
+              host.id = HOST_ID;
+              var sh = host.attachShadow({ mode: 'open' });
+              sh.innerHTML = HTML;
+              document.documentElement.appendChild(host);
+              M.ui.sh = sh;
+
+              var $ = function (id) { return sh.getElementById(id); };
+              var sw = function (el, on) { el.classList.toggle('on', !!on); };
+
+              $('apply').onclick = function () {
+                var v = parseFloat($('amt').value.replace(/[^\d.]/g, '')) || M.target;
+                M.target = v; M.force = true; sw($('swForce'), true); schedule();
+              };
+              $('off').onclick = function () { M.force = false; location.reload(); };
+              $('mode').onchange = function () { M.mode = this.value; schedule(); };
+              $('swForce').onclick = function () { M.force = !M.force; sw(this, M.force); schedule(); };
+              $('swSock').onclick = function () { M.patchSocket = !M.patchSocket; sw(this, M.patchSocket); patchSocket(); };
+              $('swFarm').onclick = function () { M.autoFarm = !M.autoFarm; sw(this, M.autoFarm); };
+              $('min').onclick = function () { sh.querySelector('.panel').classList.toggle('min'); };
+              $('probe').onclick = function () {
+                var r = probe(); console.log('[llmod] money candidates', r);
+                alert('Found ' + r.length + ' candidate money field(s). See DevTools console.');
+              };
+              $('dump').onclick = function () {
+                var txt = JSON.stringify(M.log, null, 1);
+                console.log(txt);
+                if (navigator.clipboard) navigator.clipboard.writeText(txt);
+                alert('Copied ' + M.log.length + ' network entries.');
+              };
+            }
+
+            addEventListener('keydown', function (e) {
+              if (e.ctrlKey && e.shiftKey && (e.key === 'M' || e.key === 'm')) {
+                var p = M.ui.sh && M.ui.sh.querySelector('.panel'); if (p) p.classList.toggle('min');
+              }
+            });
+
+            M.set = function (n) { M.target = n; M.force = true; schedule(); };
+            M.off = function () { M.force = false; };
+            M.on  = function () { M.force = true; schedule(); };
+            M.mount = mount;
+
+            function farm() {
+              if (!M.autoFarm) return;
+              var rx = new RegExp('\\b(' + M.farmWords.join('|') + ')\\b', 'i');
+              var els = document.querySelectorAll('button,[role="button"]');
+              for (var i = 0; i < els.length; i++) {
+                var el = els[i];
+                if (el.closest('#' + HOST_ID) || el.disabled) continue;
+                if (rx.test((el.getAttribute('aria-label') || '') + ' ' + (el.textContent || ''))) { el.click(); return; }
+              }
+            }
+
+            installSniffer();
+            patchSocket();
+            function boot() {
+              if (!document.body) { setTimeout(boot, 300); return; }
+              mount();
+              new MutationObserver(schedule).observe(document.body, { subtree: true, childList: true, characterData: true });
+              schedule();
+              setInterval(schedule, 1500);
+              setInterval(function () { if (!document.getElementById(HOST_ID)) mount(); }, 3000);
+              setInterval(farm, 1200);
+            }
+            boot();
+          })();
+          EOF
+          echo "mod.js ok - all files written"
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LagosLifeMod-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Save project back to repo
+        if: always()
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Generate project files"
+          git push || true
